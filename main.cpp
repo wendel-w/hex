@@ -8,6 +8,8 @@
 #include <thread>
 #include <future>
 #include <climits>
+#include <algorithm>
+#include <random>
 
 using namespace sf;
 using namespace std;
@@ -27,6 +29,10 @@ void ai_pair(vector<vector<int>> board, pair<int, int>&move,int depth, int turn)
 void make_move( int i, int j);
 void refresh_text_turn();
 void ir();
+struct Node;
+void deleteNodes(Node*&node);
+
+bool swap_happened=false;
 
 enum ai_var
 {
@@ -611,6 +617,8 @@ namespace pos
 vector<pair<int, int>> getPossibleMoves(const vector<vector<int>>&b, int turn)
 {
 	vector<pair<int, int>>ret_vec;
+	if(pos::check_for_winner(board)!=0)
+		return ret_vec;
 	bool isTurn1 = turn==1;
 	for(int i=0;i<n;i++)
 		for(int j=0;j<n;j++)
@@ -622,7 +630,7 @@ vector<pair<int, int>> getPossibleMoves(const vector<vector<int>>&b, int turn)
 	//
 	//vector<pair<int, int>>ret_vec;
 	//bool isTurn1 = turn==1;
-	int i, j;
+	/*int i, j;
 	if(ai_move_checklist.empty())
 	{
 		cerr<<"E M P T Y; !!!"<<endl;
@@ -634,8 +642,9 @@ vector<pair<int, int>> getPossibleMoves(const vector<vector<int>>&b, int turn)
 		if(b[i][j]==0 or isTurn1)
 			ret_vec.push_back({i, j});
 	}
-	return ret_vec;
+	return ret_vec;*/
 }
+
 void write_pos_moves(vector<vector<int>>b, int t)
 {
 	vector<pair<int, int>>moves=getPossibleMoves(b, t);
@@ -656,10 +665,64 @@ vector<vector<int>> make_move_ij(vector<vector<int>> board, int i, int j, int tu
 	return board;
 }
 
-int simulation(vector<vector<int>>b, int turn)
+int simulation(vector<vector<int>>b, int turn, bool swapped)
 {
+	
+	//cout<<"n="<<n<<endl;
+	int m=(int)n;
+	int n=m;
+	//cout<<"m="<<m<<endl;
 	int winner=pos::check_for_winner(b);
-	while(winner==0)
+	if(winner!=0) return (winner==1)?1:0;
+
+	int maxBlue, maxRed ,currentBlue, currentRed;
+	if(swapped==false)
+	{
+		maxRed = n*n/2;
+		maxBlue= n*n/2 + (n%2);
+		
+		currentRed = (turn)/2;
+		currentBlue= (turn+1)/2;
+	}
+	else
+	{
+		maxRed = n*n/2 + (n%2);
+		maxBlue= n*n/2;
+
+		currentRed = (turn)/2;
+		currentBlue = (turn-1)/2;
+	}
+	int requiredRed=maxRed-currentRed, requiredBlue=maxBlue-currentBlue;
+	//cout<<"max blue,red"<<maxBlue<<" "<<maxRed<<"\ncurrent blue,red"<<currentBlue<<" "<<currentRed<<endl<<"req blu,red"<<requiredBlue<<" "<<requiredRed<<endl;
+	vector<int>v;
+	v.insert(v.end(), requiredRed, -1);
+	v.insert(v.end(), requiredBlue, 1);
+	std::random_device rd;  // Non-deterministic random number generator
+	std::mt19937 g(rd());   // Seeded random number generator
+	std::shuffle(v.begin(), v.end(), g); // Shuffle the vector
+
+	int k=0;
+	for(int i=0;i<n;i++)
+	{
+		for(int j=0;j<n;j++)
+		{
+			if(b[i][j]==0)
+			{
+				b[i][j]=v[k];
+				k++;
+			}
+			//cout<<b[i][j]<<"\t";
+		}
+		//cout<<"\n";
+	}
+	//cout<<"winner="<<pos::check_for_winner(b)<<endl;
+	int result;
+	if (pos::check_for_winner(b)==1)
+		return 1;
+	else
+		return 0;
+
+	/*while(winner==0)
 	{
 		vector<pair<int, int>> random_moves=getPossibleMoves(b, turn);
 		if (random_moves.empty()) {
@@ -671,12 +734,13 @@ int simulation(vector<vector<int>>b, int turn)
 		turn++;
 		winner=pos::check_for_winner(b);
 	}
-	int result;
+	result;
 	if (winner==1)
 		result=1;
 	else
 		result=0;
-	return result;
+	cout<<"simulation="<<result<<endl;
+	return result;*/
 	/*
 	while(pos::check_for_winner(b)==0)
 	{
@@ -689,7 +753,6 @@ int simulation(vector<vector<int>>b, int turn)
 	*/
 }
 
-
 void writeVector(vector<int>v)
 {
 	for(int i:v)
@@ -698,17 +761,25 @@ void writeVector(vector<int>v)
 	}
 }
 
+struct Stats
+{
+	int wins=0;
+	int visits=0;
+};
+
 struct Node
 {
 	int wins=0;
 	int visits=0;
 	int turn;
+	bool swapped=false;
 	pair<int, int>last_move;
 	vector<Node*>children;
+	unordered_map<Node*, Stats>childrenStats;
 	vector<vector<int>>board;
 	vector<pair<int, int>>untriedMoves;
-	//Node*parent;
-	vector<Node*>parents;
+	Node*parent;
+	//vector<Node*>parents;
 	
 	bool isLeaf(){
 		return children.empty();
@@ -717,7 +788,7 @@ struct Node
         if (visits == 0)
             return numeric_limits<float>::infinity(); // Prioritize unvisited nodes
 		return ( float(wins) / visits ) + C * sqrt( log(parent->visits) / visits );
-    }
+	    }
 
 	Node* selectBestUCT()
 	{
@@ -734,7 +805,7 @@ struct Node
 			}
 		}
 		return best_child;
-    }
+	}
 
 	pair<int,int> bestMove()
 	{
@@ -751,16 +822,67 @@ struct Node
 		return move;
 	}
 
-	Node(vector<vector<int>> b, int t, Node*p=NULL)
+	Node(vector<vector<int>> b, int t, bool s=swap_happened,Node*p=NULL)
 	{
 		//parent=p;
-		parents.pushback(p);
+		parent=p;
 		turn=t;
 		board=b;
+		swapped=s;
 		//create untried moves
 		untriedMoves = getPossibleMoves(board, turn);
 	}
-};
+}*root;
+
+void selectBestMove(pair<int,int>move)
+{
+	int max_visits=-1;
+	Node*selectedNode;
+	for(Node* child : root->children)
+	{
+		if(child->visits>max_visits)
+		{
+			max_visits=child->visits;
+			selectedNode=child;
+			move=child->last_move;
+		}
+	}
+	for(Node*&child : root->children)
+	{
+		if(child!=selectedNode)
+		{
+			deleteNodes(child);
+		}
+	}
+	delete root;
+	root=selectedNode;
+}
+
+void manageRoot()
+{
+	if(root==NULL)
+	{
+		cout<<"\t\tcreated a new root\n";
+		root= new Node(board, turn, swap_happened);
+		return;
+	}
+	cout<<"replaced the root\n";
+	Node*new_root=NULL;
+	for(Node*&child : root->children)
+	{
+		if(board==child->board)
+		{
+			new_root=child;
+		}
+		else
+			deleteNodes(child);
+	}
+	delete root;
+	if(new_root!=NULL)
+		root=new_root;
+	else
+		root= new Node(board, turn, swap_happened);
+}
 
 void get_t(const int&n)
 {
@@ -780,7 +902,7 @@ void write_children(Node*node)
 void write_m_children(Node*node, int max_depth, int depth=0)
 {
 	get_t(depth);
-	cout<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\t\t\t"<<node->last_move.first<<" "<<node->last_move.second<<endl;
+	cout<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\t\t\t"<<node->swapped<<"\t"<<node->last_move.first<<" "<<node->last_move.second<<endl;
 	if(depth<max_depth)
 	{
 		get_t(depth+1);
@@ -810,7 +932,7 @@ void write_m_children(Node*node, int max_depth, int depth=0)
 
 void newBackpropagate(Node*current, int result, int visits)
 {
-	/*do{
+	do{
 		current->visits+=visits;
 		if(current->turn%2==1)
 			current->wins += result;
@@ -818,18 +940,7 @@ void newBackpropagate(Node*current, int result, int visits)
 			current->wins += (visits-result);
 		
 		current=current->parent;
-	} while(current!=NULL);*/
-	current->visits += visits;
-	if(current->turn%2==1)
-		current->wins += result;
-	else
-		current->wins += (visits-result);
-	if(!current->parents.empty())
-		for(auto&p : current->parents)
-		{
-			newBackpropagate(p, result, visits);
-		}
-		
+	} while(current!=NULL);
 }
 
 void newSimulation(Node*node, int&result, int&visits)
@@ -850,7 +961,7 @@ void newSimulation(Node*node, int&result, int&visits)
 		vector<future<int>>thread_results;
 		for(int i=0;i<5;i++)
 		{
-			thread_results.push_back(async(launch::async, simulation, node->board, node->turn));
+			thread_results.push_back(async(launch::async, simulation, node->board, node->turn, node->swapped));
 		}
 		for (auto& f : thread_results)
 		{
@@ -859,20 +970,20 @@ void newSimulation(Node*node, int&result, int&visits)
 		return;
 	}
 	// else normal simulation
-	result=simulation(node->board, node->turn);
+	result=simulation(node->board, node->turn, node->swapped);
 	visits=1;
 }
 
 void selection(Node *& node)
 {
 	int k=0;
-	cout<<"in selection children nr:"<<node->children.size()<<endl;
+	//cout<<"in selection children nr:"<<node->children.size()<<endl;
 	while (!node->isLeaf() and node->untriedMoves.empty())
 	{
 		node = node->selectBestUCT();
 		k++;
 	}
-	cout<<"selection depth: "<<k<<"\n";
+	//cout<<"selection depth: "<<k<<"\n";
 }
 
 void expension(Node*&node)
@@ -886,11 +997,12 @@ void expension(Node*&node)
 		//cout<<"moves: "<<i<<" "<<j<<endl;
 
 		vector<vector<int>>new_board = node->board;
+		bool swapped=(new_board[i][j]!=0)?true :false;
 		new_board[i][j]=(turn%2==0)? 1 : -1;
 
 		int new_turn=node->turn+1;
 
-		Node * new_node = new Node(new_board, new_turn, node);
+		Node * new_node = new Node(new_board, new_turn, swapped or node->swapped, node);
 		new_node->last_move={i,j};
 		node->children.push_back(new_node);
 		node=new_node;
@@ -900,23 +1012,52 @@ void expension(Node*&node)
 		//cout<<"NO EXPENSION -> UNTRIED MOVES EMPTY\n";
 }
 
-void deleteNodes(Node*node)
+void deleteNodes(Node*&node)
 {
+	if(node==NULL)
+	{
+		//cout<<"NULL!!!!\n";
+		return;
+	}
 	if(node->isLeaf())
 	{
+		//cout<<"entered isLeaf()\n";
 		delete node;
-		//cout<<"deleted a node\n";
+		return;
 	}
-	else
+	
+	for(int i=0;i<node->children.size();i++)
 	{
-		for(int i=0;i<node->children.size();i++)
-		{
-			deleteNodes(node->children[i]);
-		}
-		delete node;
-		//cout<<"deleted a node\n";
+		deleteNodes(node->children[i]);
 	}
+	delete node;
+	node=NULL;
 }
+
+/*Node*findNewRoot()
+{
+	Node*null=NULL;
+	if(root==NULL)
+	{
+		return null;
+	}
+	if(root->board==board)
+	{
+		return root;
+	}
+	if(!root->isLeaf())
+		for(auto&child : root->children)
+		{
+			if(child->board==board)
+			{
+				cout<<"FOUND A NEW ROOT\n";
+				return child;
+			}
+		}
+	cout<<"didnt found the new root!!!!!!!!!!!\n";
+	return null;
+}*/
+
 
 namespace ai
 {
@@ -926,20 +1067,28 @@ namespace ai
 
 	void iterationThread(vector<vector<int>>board, pair<int,int>&move, int turn)
 	{
-		Node* root = new Node(board, turn);
+		manageRoot();
+		/*cout<<"root="<<root<<endl;
+		root=findNewRoot();
+		deleteNodes(root);
+		root = new Node(board, turn);
+		cout<<"root swapped:"<<root->swapped<<endl;*/
+		int time_limit=1000;
 
-		int iteration_limit=5000; for(int i=0;i<iteration_limit;i++)
+		auto start = std::chrono::high_resolution_clock::now();
+		int iteration_limit=2000;
+		for(int i=0;i<iteration_limit;i++)
 		{
 			Node * node = root;
 
-			cout<<"\niteration cycle "<<i<<"\n\n";
+			//cout<<"\niteration cycle "<<i<<"\n\n";
 			//selection
 			selection(node);
-			if(node==root)cout<<"ROOT was selected\n";
+			//if(node==root)cout<<"ROOT was selected\n";
 			//expension
 			expension(node);
-			if(node==root)cout<<"same as ROOT after expension\n";
-			cout<<"expanded node visits:"<<node->visits<<endl;
+			//if(node==root)cout<<"same as ROOT after expension\n";
+			//cout<<"expanded node visits:"<<node->visits<<endl;
 
 			//simulation
 			/*int result=simulation(node->board, node->turn);
@@ -951,11 +1100,17 @@ namespace ai
 			//backpropagation
 			//backpropagate(node, result);
 			newBackpropagate(node, result, visits);
+
+			auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::high_resolution_clock::now() - start).count();
+			if(elapsed>=time_limit)
+				break;
 		}
-		move=root->bestMove();
-		cout<<"\tvisits\twins\tchildren.size\tuntriedMoves.size\tlastMove\n";
+		//move=root->bestMove();
+		selectBestMove(move);
+		//root=findNewRoot();
+		cout<<"\tvisits\twins\tchildren.size\tuntriedMoves.size\tswap\tlastMove\n";
 		write_m_children(root, 2);
-		deleteNodes(root);
+		//deleteNodes(root);
 
 		state=DONE;
 	}
@@ -1055,6 +1210,7 @@ int main(int argc, char const *argv[])
 					//reset board and turn    (game variables)
 					board.assign(board.size(), vector<int>(board.size(), 0));
 					turn=0;
+					swap_happened=false;
 					refresh_ai_move_checklist();
 					ir();
 					refresh_text_turn();
@@ -1114,7 +1270,7 @@ int main(int argc, char const *argv[])
 				//cout<<" blue "<<pos::bfs(board, 1)<<endl;
 				//cout<<" red "<<pos::bfs(board, -1)<<endl;
 				//cout<<" pos ev "<<pos::position_evaluation(board)<<endl;
-				cout<<"simulation="<<simulation(board, turn)<<endl;
+				cout<<"simulation="<<simulation(board, turn, swap_happened)<<endl<<"swap happened:"<<swap_happened<<endl;
 				//cout<<"pos moves:";
 				//write_pos_moves(board, turn);
 			}
@@ -1361,6 +1517,8 @@ void make_move( int i, int j)
 {
 	if(board[i][j]==0 or turn<=1)
 	{
+		if(board[i][j]!=0)
+			swap_happened=true;
 		board[i][j]=turn%2*-2+1;
 		turn++;
 	}
