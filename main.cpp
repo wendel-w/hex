@@ -17,22 +17,35 @@ using namespace std;
 //variables
 float hex_rad=(2*900)/(9*3+1), unit;
 int turn=0;
-float n=3;
+float n=6;
 ConvexShape border_unit(3);
 CircleShape circ(hex_rad*sqrt(3)/2-5);
+Color blue = Color(66, 211, 255, 255);
 vector<pair<int, int>> ai_move_checklist;
 int max_threads=10;
 Font font;
 RenderWindow window(sf::VideoMode(1550, 900), "Hex");
 vector<vector<int>> board(21, vector<int>(21, 0));
 void ai_pair(vector<vector<int>> board, pair<int, int>&move,int depth, int turn);
-void make_move( int i, int j);
-void refresh_text_turn();
-void ir();
-struct Node;
-void deleteNodes(Node*&node);
+void makeMove( int i, int j);
+namespace mcts{struct Node;
+void deleteNodes(mcts::Node*&node);}
 
 bool swap_happened=false;
+
+//functions
+void setpos_borderunit(float x, float y, string where);
+bool f(int i, int j, int target, vector<vector<bool>>& visited);
+void vv(string hay);
+bool mouse_in_shape(Vector2i mouse, ConvexShape con);
+void swapAct(vector<vector<int>>&board);
+void resize();
+void ww(float a);
+//int check_for_winner(vector<vector<int>> board);
+//void ww(float a);
+
+void refreshTextTurn();
+pair<int, int> ai_pair(vector<vector<int>> board, int depth, int turn);
 
 enum ai_var
 {
@@ -51,12 +64,12 @@ enum game_stage_var
 };
 game_stage_var game_stage = start_menu;
 
-class TABLE
+class Table
 {
 	public:
 	CircleShape hex, circ;
 	ConvexShape border_left, border_right, border_top, border_bottom;
-	TABLE()
+	Table()
 	{
 		hex.setPointCount(6);
 		hex.setOutlineColor(Color::Black);
@@ -163,6 +176,10 @@ class Button
 		text.setFont(font);
 		hex.setPointCount(6);
 	}
+	Button(String str,Color c_text, Color c_hex)
+	{
+		setString(str, c_text, c_hex);
+	}
 	void resize(float x, float y, float text_size, float b=sqrt(3)/2)
 	{
 		float a=0.1*unit;
@@ -200,7 +217,20 @@ class Button
 		return 1;
 	}
 }
-Bstart ,con, Bswap, Bexit;
+Bstart("Start Game", Color(0, 0, 0, 255), Color(255, 255, 255, 255)), con("Continue", Color(0, 0, 0, 255), Color(255, 255, 255, 255)), Bswap("Swap", Color(0, 0, 0, 255), Color(255, 255, 255, 255)), Bexit("Exit", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
+vector<vector<Button>> ai_button=
+{ {
+		Button("human", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("easy", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("medium", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("hard", Color(0, 0, 0, 255), Color(255, 255, 255, 255))
+	},
+	{
+		Button("human", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("easy", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("medium", Color(0, 0, 0, 255), Color(255, 255, 255, 255)),
+		Button("hard", Color(0, 0, 0, 255), Color(255, 255, 255, 255))
+} };
 
 class TEXT
 {
@@ -239,7 +269,7 @@ class TEXT
 		text.setPosition(t);
 	}
 }
-T_PlayerBlue("Player 1(blue):", Color::Blue), T_PlayerRed("Player 2(red):", Color::Red), T_TableSize(Color::White), T_Turn(Color::White), T_WhosTurn;
+T_PlayerBlue("Player 1(blue):", blue), T_PlayerRed("Player 2(red):", Color::Red), T_TableSize(Color::White), T_Turn(Color::White), T_WhosTurn;
 
 class DualTriangle
 {
@@ -297,138 +327,11 @@ class DualTriangle
 triangle;
 
 
-//functions
-void setpos_borderunit(float x, float y, string where);
-bool f(int i, int j, int target, vector<vector<bool>>& visited);
-void vv(string hay);
-bool mouse_in_shape(Vector2i mouse, ConvexShape con);
-void swap_act(vector<vector<int>>&board);
-void resize();
-void ww(float a);
-int start_dfs_pos_ev(int i, int j, int target, vector<vector<int>> board);
-//int check_for_winner(vector<vector<int>> board);
-//void ww(float a);
 
-void refresh_text_turn();
-void refresh_ai_move_checklist();
-pair<int, int> ai_pair(vector<vector<int>> board, int depth, int turn);
-
-vector<vector<Button>> ai_button(2, vector<Button>(4));
-
-struct pair_hash 
-{
-
-		template <class T1, class T2>
-		std::size_t operator() (const std::pair<T1, T2>& p) const {
-		auto h1 = std::hash<T1>{}(p.first);
-		auto h2 = std::hash<T2>{}(p.second);
-		// Combine the two hash values (example method: XOR and bit shifting)
-		return h1 ^ (h2 << 1);
-	}
-};
 
 //position related functions
 namespace pos
 {
-	/*pair< int , unordered_set<pair<int, int>, pair_hash> > write_par_matrix(int i, int j,vector<vector<pair<int, int>>> par_matrix, vector<vector<int>>board, int target)
-	{
-		vector<int> di = {-2, -1, 1, 2, 1, -1};
-		vector<int> dj = {-1, 1, 2, 1, -1, -2};
-
-		int prev_i=-5, prev_j=-5;
-		int  num=0;
-		unordered_set<pair<int, int>, pair_hash> S;
-		while(i!=-1 and j!=-1)
-		{
-			//increment
-			if(board[i][j]==0)
-			{
-				num++;
-			}
-			if(board[i][j]==target)
-				S.insert({i, j});
-			prev_i=i; prev_j=j;
-			tie(i, j)=par_matrix[i][j];
-		}
-		return make_pair(num, S);
-	}
-
-	int heuristic(int i, int j, int target, bool goal)
-	{
-		int goal_value=(goal)? n-1 : 0;
-		if(target==1)
-			return n-(n-abs(goal_value-i));
-		else
-			return n-(n-abs(goal_value-j));
-	}*/
-
-/*
-	pair< float , unordered_set<pair<int, int>, pair_hash> >     bfs_for_pos_ev(int i, int j, int target,vector<vector<int>> board, bool goal)
-	{
-		vector<vector<bool>> visited(n, vector<bool>(n, 0));
-		int goal_value=(goal)? n-1 : 0;
-
-		vector<vector<pair<int, int>>>par_matrix(n, vector<pair<int, int>>(n, make_pair(-2, -2)));
-		par_matrix[i][j]=make_pair(-1, -1);
-		priority_queue< tuple<int, int, int, int, int>, vector<tuple<int, int, int, int, int>>, greater<tuple<int, int, int, int , int>> > Q;
-		int num=0;
-		unordered_set<pair<int, int>, pair_hash> S;
-		Q.push(make_tuple(0, 0, num, i, j));
-		vector<int> di = {1, 0, 0, -1, 1, -1};
-		vector<int> dj = {0, 1, -1, 0, 1, -1};
-
-		vector<int> ri = {-1, -1, 0, 1, 1, 0};
-		vector<int> rj = {-1, 0, 1, 1, 0, -1};
-		vector<int> ri2 = {-2, -1, 1, 2, 1, -1};
-		vector<int> rj2 = {-1, 1, 2, 1, -1, -2};
-
-		if(i<n and j<n and j>=0 and i>=0 and visited[i][j]==0 and (board[i][j]==target or board[i][j]==0) )
-			while(Q.empty()==0)
-			{
-				i=get<3>(Q.top());
-				j=get<4>(Q.top());
-				Q.pop();
-				//check if the current tile is valid
-				if(visited[i][j]==1)
-					continue;
-				visited[i][j]=1;
-				//check for target
-				if(target==1 and i==goal_value)
-					return write_par_matrix(i, j, par_matrix, board, target);
-				else if(target==-1 and j==goal_value)
-					return write_par_matrix(i, j, par_matrix, board, target);
-				for(int g=0;g<6;g++)
-				{
-					if((board[i][j]==target or board[i][j]==0) and (i+ri[g]>=0 and j+rj[g]>=0 and i+ri[g]<n and j+rj[g]<n) and min(i+ri[(g+1)%6], j+rj[(g+1)%6])>=0 and max(i+ri[(g+1)%6], j+rj[(g+1)%6])<n and min(i+ri2[g], j+rj2[g])>=0 and max(i+ri2[g], j+rj2[g])<n)
-					{
-						if(board[i+ri[g]][j+rj[g]]==0 and board[i+ri[(g+1)%6]][j+rj[(g+1)%6]]==0 and (board[i+ri2[g]][j+rj2[g]]==target or board[i+ri2[g]][j+rj2[g]]==0))
-						{
-							Q.push(make_tuple(1, heuristic(i+ri2[g], j+rj2[g], target, goal), num, i+ri2[g] , j+rj2[g]));
-							num++;
-							if(par_matrix[ i+ri2[g] ][ j+rj2[g] ]==make_pair(-2, -2))
-								par_matrix[ i+ri2[g] ][ j+rj2[g] ] = make_pair(i, j);
-						}
-					}
-
-					if(i+di[g]<n and j+dj[g]<n and j+dj[g]>=0 and i+di[g]>=0  and (board[i+di[g]][j+dj[g]]==target or board[i+di[g]][j+dj[g]]==0) )
-					{
-						if(board[i+di[g]][j+dj[g]]==0)
-							Q.push(make_tuple(1, heuristic(i+di[g], j+dj[g], target, goal), num, i+di[g] , j+dj[g]));
-						else
-							Q.push(make_tuple(0, heuristic(i+di[g], j+dj[g],target, goal), num, i+di[g] , j+dj[g]));
-						num++;
-						if(par_matrix[ i+di[g] ][ j+dj[g] ]==make_pair(-2, -2))
-							par_matrix[ i+di[g] ][ j+dj[g] ] = make_pair(i, j);
-
-
-					}
-
-				}
-			}
-		return make_pair(-1, S);
-	}
-*/
-
 	bool f(int i, int j, int target, vector<vector<bool>> &visited,vector<vector<int>>board)
 	{
 		if(i<0 or i>n-1 or j<0 or j>n-1 or visited[i][j]==1 or board[i][j]!=target)
@@ -465,7 +368,7 @@ namespace pos
 		return f(i, j, target, visited, board);
 	}
 
-	int check_for_winner(vector<vector<int>> board)
+	int checkForWinner(vector<vector<int>> board)
 	{
 		for(int i=0;i<n;i++)
 		{
@@ -477,7 +380,7 @@ namespace pos
 		return 0;
 	}
 
-	bool valid(int x, int y)
+	/*bool valid(int x, int y)
 	{
 		if(x>=0 and y>=0 and x<n and y<n)
 			return 1;
@@ -491,8 +394,8 @@ namespace pos
 	
 		int di[6]={-1, -1, 0, 1, 1, 0};
 		int dj[6]={-1, 0, 1, 1, 0, -1};
-		/*int ei[6]={-2, -1, 1 ,2, 1, -1};
-		int ej[6]={-1, 1, 2, 1, -1, -2};*/
+		int ei[6]={-2, -1, 1 ,2, 1, -1};
+		int ej[6]={-1, 1, 2, 1, -1, -2};
 
 		for(int i=0;i<n;i++)
 		{
@@ -602,7 +505,6 @@ namespace pos
 		vector<int> di2 = {-2, -1, 1, 2, 1, -1};
 		vector<int> dj2 = {-1, 1, 2, 1, -1, -2};
 		
-		//unordered_set<pair<int, int>, pair_hash>H;
 		float a=bfs(board, 1);
 		float b=bfs(board, -1);
 		//a=n-a;
@@ -610,483 +512,545 @@ namespace pos
 		//b=n-b;
 		b=(n-b)*10+cp_r;
 		return a-b;
-	}
+	}*/
 
-}
 
-vector<pair<int, int>> getPossibleMoves(const vector<vector<int>>&b, int turn)
-{
-	vector<pair<int, int>>ret_vec;
-	if(pos::check_for_winner(board)!=0)
+	vector<pair<int, int>> getPossibleMoves(const vector<vector<int>>&b, int turn)
+	{
+		vector<pair<int, int>>ret_vec;
+		if(pos::checkForWinner(board)!=0)
+			return ret_vec;
+		bool isTurn1 = turn==1;
+		for(int i=0;i<n;i++)
+			for(int j=0;j<n;j++)
+			{
+				if(b[i][j]==0 or isTurn1)
+					ret_vec.push_back({i, j});
+			}
 		return ret_vec;
-	bool isTurn1 = turn==1;
-	for(int i=0;i<n;i++)
-		for(int j=0;j<n;j++)
+		//
+		//vector<pair<int, int>>ret_vec;
+		//bool isTurn1 = turn==1;
+		/*int i, j;
+		if(ai_move_checklist.empty())
 		{
+			cerr<<"E M P T Y; !!!"<<endl;
+			exit(1);
+		}
+		for(int l=ai_move_checklist.size()-1;l>=0;--l)
+		{
+			tie(i, j)=ai_move_checklist[i];
 			if(b[i][j]==0 or isTurn1)
 				ret_vec.push_back({i, j});
 		}
-	return ret_vec;
-	//
-	//vector<pair<int, int>>ret_vec;
-	//bool isTurn1 = turn==1;
-	/*int i, j;
-	if(ai_move_checklist.empty())
-	{
-		cerr<<"E M P T Y; !!!"<<endl;
-		exit(1);
+		return ret_vec;*/
 	}
-	for(int l=ai_move_checklist.size()-1;l>=0;--l)
+
+	pair<int, int>getRandomMove(vector<vector<int>>b, int turn)
 	{
-		tie(i, j)=ai_move_checklist[i];
-		if(b[i][j]==0 or isTurn1)
-			ret_vec.push_back({i, j});
+		vector<pair<int,int>>possibleMoves=getPossibleMoves(b, turn);
+		return possibleMoves[ rand()%possibleMoves.size() ];
 	}
-	return ret_vec;*/
-}
 
-void write_pos_moves(vector<vector<int>>b, int t)
-{
-	vector<pair<int, int>>moves=getPossibleMoves(b, t);
-	for(int i=0;i<moves.size();i++)
+	void write_pos_moves(vector<vector<int>>b, int t)
 	{
-		cout<<"("<<moves[i].first<<" "<<moves[i].second<<")"<<"   ";
-	}
-	cout<<endl;
-}
-
-vector<vector<int>> make_move_ij(vector<vector<int>> board, int i, int j, int turn)
-{
-	if(turn%2==0)
-		board[i][j]=1;
-	else
-		board[i][j]=-1;
-	//board[i][j]=turn%2*-2+1;
-	return board;
-}
-
-int simulation(vector<vector<int>>b, int turn, bool swapped)
-{
-	
-	//cout<<"n="<<n<<endl;
-	int m=(int)n;
-	int n=m;
-	//cout<<"m="<<m<<endl;
-	int winner=pos::check_for_winner(b);
-	if(winner!=0) return (winner==1)?1:0;
-
-	int maxBlue, maxRed ,currentBlue, currentRed;
-	if(swapped==false)
-	{
-		maxRed = n*n/2;
-		maxBlue= n*n/2 + (n%2);
-		
-		currentRed = (turn)/2;
-		currentBlue= (turn+1)/2;
-	}
-	else
-	{
-		maxRed = n*n/2 + (n%2);
-		maxBlue= n*n/2;
-
-		currentRed = (turn)/2;
-		currentBlue = (turn-1)/2;
-	}
-	int requiredRed=maxRed-currentRed, requiredBlue=maxBlue-currentBlue;
-	//cout<<"max blue,red"<<maxBlue<<" "<<maxRed<<"\ncurrent blue,red"<<currentBlue<<" "<<currentRed<<endl<<"req blu,red"<<requiredBlue<<" "<<requiredRed<<endl;
-	vector<int>v;
-	v.insert(v.end(), requiredRed, -1);
-	v.insert(v.end(), requiredBlue, 1);
-	std::random_device rd;  // Non-deterministic random number generator
-	std::mt19937 g(rd());   // Seeded random number generator
-	std::shuffle(v.begin(), v.end(), g); // Shuffle the vector
-
-	int k=0;
-	for(int i=0;i<n;i++)
-	{
-		for(int j=0;j<n;j++)
+		vector<pair<int, int>>moves=getPossibleMoves(b, t);
+		for(int i=0;i<moves.size();i++)
 		{
-			if(b[i][j]==0)
+			cout<<"("<<moves[i].first<<" "<<moves[i].second<<")"<<"   ";
+		}
+		cout<<endl;
+	}
+
+	vector<vector<int>> makeMove_ij(vector<vector<int>> board, int i, int j, int turn)
+	{
+		if(turn%2==0)
+			board[i][j]=1;
+		else
+			board[i][j]=-1;
+		//board[i][j]=turn%2*-2+1;
+		return board;
+	}
+
+	void writeVector(vector<int>v)
+	{
+		for(int i:v)
+		{
+			cout<<i<<" ";
+		}
+	}
+
+}
+
+namespace mcts
+{
+	int simulation(vector<vector<int>>b, int turn, bool swapped)
+	{
+		while(turn<2)
+		{
+			pair<int,int>m=pos::getRandomMove(b,turn);
+			b=pos::makeMove_ij(b, m.first, m.second, turn);
+			turn++;
+		}
+		//int winner=pos::checkForWinner(b);
+		//if(winner!=0) return (winner==1)?1:0;
+		//cout<<"n="<<n<<endl;
+		int m=(int)n;
+		int n=m;
+		//cout<<"m="<<m<<endl;
+
+		int maxBlue, maxRed ,currentBlue, currentRed;
+		if(swapped==false)
+		{
+			maxRed = n*n/2;
+			maxBlue= n*n/2 + (n%2);
+			
+			currentRed = (turn)/2;
+			currentBlue= (turn+1)/2;
+		}
+		else
+		{
+			maxRed = n*n/2 + (n%2);
+			maxBlue= n*n/2;
+
+			currentRed = (turn)/2;
+			currentBlue = (turn-1)/2;
+		}
+		int requiredRed=maxRed-currentRed, requiredBlue=maxBlue-currentBlue;
+		//cout<<"max blue,red"<<maxBlue<<" "<<maxRed<<"\ncurrent blue,red"<<currentBlue<<" "<<currentRed<<endl<<"req blu,red"<<requiredBlue<<" "<<requiredRed<<endl;
+		vector<int>v;
+		v.insert(v.end(), requiredRed, -1);
+		v.insert(v.end(), requiredBlue, 1);
+		std::random_device rd;  // Non-deterministic random number generator
+		std::mt19937 g(rd());   // Seeded random number generator
+		std::shuffle(v.begin(), v.end(), g); // Shuffle the vector
+
+		int k=0;
+		for(int i=0;i<n;i++)
+		{
+			for(int j=0;j<n;j++)
 			{
-				b[i][j]=v[k];
-				k++;
+				if(b[i][j]==0)
+				{
+					b[i][j]=v[k];
+					k++;
+				}
+				//cout<<b[i][j]<<"\t";
 			}
-			//cout<<b[i][j]<<"\t";
+			//cout<<"\n";
 		}
-		//cout<<"\n";
-	}
-	//cout<<"winner="<<pos::check_for_winner(b)<<endl;
-	int result;
-	if (pos::check_for_winner(b)==1)
-		return 1;
-	else
-		return 0;
+		//cout<<"winner="<<pos::check_for_winner(b)<<endl;
+		int result;
+		if (pos::checkForWinner(b)==1)
+			return 1;
+		else
+			return 0;
 
-	/*while(winner==0)
-	{
-		vector<pair<int, int>> random_moves=getPossibleMoves(b, turn);
-		if (random_moves.empty()) {
-			std::cerr << "ERROR: No possible moves for turn " << turn << std::endl;
-			exit(1);
-		}
-		pair<int, int> move = random_moves[ rand()%random_moves.size() ];
-		b=make_move_ij(b, move.first, move.second, turn);
-		turn++;
-		winner=pos::check_for_winner(b);
-	}
-	result;
-	if (winner==1)
-		result=1;
-	else
-		result=0;
-	cout<<"simulation="<<result<<endl;
-	return result;*/
-	/*
-	while(pos::check_for_winner(b)==0)
-	{
-		vector<pair<int, int>> random_moves=getPossibleMoves(b, turn);
-		pair<int, int> move = random_moves[ rand()%random_moves.size() ];
-		b=make_move_ij(b, move.first, move.second, turn);
-		turn++;
-	}
-	return pos::check_for_winner(b);
-	*/
-}
-
-void writeVector(vector<int>v)
-{
-	for(int i:v)
-	{
-		cout<<i<<" ";
-	}
-}
-
-struct Stats
-{
-	int wins=0;
-	int visits=0;
-};
-
-struct Node
-{
-	int wins=0;
-	int visits=0;
-	int turn;
-	bool swapped=false;
-	pair<int, int>last_move;
-	vector<Node*>children;
-	unordered_map<Node*, Stats>childrenStats;
-	vector<vector<int>>board;
-	vector<pair<int, int>>untriedMoves;
-	Node*parent;
-	//vector<Node*>parents;
-	
-	bool isLeaf(){
-		return children.empty();
-	}
-	float getUCT(double C = std::sqrt(2)) const {
-        if (visits == 0)
-            return numeric_limits<float>::infinity(); // Prioritize unvisited nodes
-		return ( float(wins) / visits ) + C * sqrt( log(parent->visits) / visits );
-	    }
-
-	Node* selectBestUCT()
-	{
-		Node* best_child = nullptr;
-		double best_value = -std::numeric_limits<double>::infinity();
-
-		for (const auto& child :children) {
-
-			double uct_value = child->getUCT();
-
-			if (uct_value > best_value) {
-				best_value = uct_value;
-				best_child = child;
+		/*while(winner==0)
+		{
+			vector<pair<int, int>> random_moves=getPossibleMoves(b, turn);
+			if (random_moves.empty()) {
+				std::cerr << "ERROR: No possible moves for turn " << turn << std::endl;
+				exit(1);
 			}
+			pair<int, int> move = random_moves[ rand()%random_moves.size() ];
+			b=makeMove_ij(b, move.first, move.second, turn);
+			turn++;
+			winner=pos::check_for_winner(b);
 		}
-		return best_child;
+		result;
+		if (winner==1)
+			result=1;
+		else
+			result=0;
+		cout<<"simulation="<<result<<endl;
+		return result;*/
+		/*
+		while(pos::check_for_winner(b)==0)
+		{
+			vector<pair<int, int>> random_moves=getPossibleMoves(b, turn);
+			pair<int, int> move = random_moves[ rand()%random_moves.size() ];
+			b=makeMove_ij(b, move.first, move.second, turn);
+			turn++;
+		}
+		return pos::check_for_winner(b);
+		*/
 	}
 
-	pair<int,int> bestMove()
+	struct Node
+	{
+		int wins=0;
+		int visits=0;
+		int turn;
+		bool swapped=false;
+		pair<int, int>last_move;
+		vector<Node*>children;
+		//unordered_map<Node*, Stats>childrenStats;
+		vector<vector<int>>board;
+		vector<pair<int, int>>untriedMoves;
+		Node*parent;
+		//vector<Node*>parents;
+		
+		bool isLeaf(){
+			return children.empty();
+		}
+		float getUCT(double C = 1.8){
+		if (visits == 0)
+		    return numeric_limits<float>::infinity(); // Prioritize unvisited nodes
+			return ( float(wins) / visits ) + C * sqrt( log(parent->visits) / visits );
+		    }
+
+		Node* selectBestUCT()
+		{
+			Node* best_child = nullptr;
+			double best_value = -std::numeric_limits<double>::infinity();
+
+			for (const auto& child :children) {
+
+				double uct_value = child->getUCT();
+
+				if (uct_value > best_value) {
+					best_value = uct_value;
+					best_child = child;
+				}
+			}
+			return best_child;
+		}
+
+		/*pair<int,int> bestMove()
+		{
+			int max_visits=-1;
+			pair<int,int>move;
+			for(Node* child: children)
+			{
+				if(child->visits<max_visits)
+				{
+					max_visits=child->visits;
+					move=child->last_move;
+				}
+			}
+			return move;
+		}*/
+
+		Node(vector<vector<int>> b, int t, bool s=swap_happened,Node*p=NULL)
+		{
+			//parent=p;
+			parent=p;
+			turn=t;
+			board=b;
+			swapped=s;
+			//create untried moves
+			untriedMoves = pos::getPossibleMoves(board, turn);
+		}
+	}*root;
+
+	void selectBestMove(pair<int,int>&move)
 	{
 		int max_visits=-1;
-		pair<int,int>move;
-		for(Node* child: children)
+		Node*selectedNode;
+		for(Node* child : root->children)
 		{
-			if(child->visits>max_visits)
+			if(max_visits<child->visits)
 			{
 				max_visits=child->visits;
+				selectedNode=child;
 				move=child->last_move;
 			}
 		}
-		return move;
-	}
-
-	Node(vector<vector<int>> b, int t, bool s=swap_happened,Node*p=NULL)
-	{
-		//parent=p;
-		parent=p;
-		turn=t;
-		board=b;
-		swapped=s;
-		//create untried moves
-		untriedMoves = getPossibleMoves(board, turn);
-	}
-}*root;
-
-void selectBestMove(pair<int,int>move)
-{
-	int max_visits=-1;
-	Node*selectedNode;
-	for(Node* child : root->children)
-	{
-		if(child->visits>max_visits)
+		/*
+		for(Node*&child : root->children)
 		{
-			max_visits=child->visits;
-			selectedNode=child;
-			move=child->last_move;
-		}
-	}
-	for(Node*&child : root->children)
-	{
-		if(child!=selectedNode)
-		{
-			deleteNodes(child);
-		}
-	}
-	delete root;
-	root=selectedNode;
-}
-
-void manageRoot()
-{
-	if(root==NULL)
-	{
-		cout<<"\t\tcreated a new root\n";
-		root= new Node(board, turn, swap_happened);
-		return;
-	}
-	cout<<"replaced the root\n";
-	Node*new_root=NULL;
-	for(Node*&child : root->children)
-	{
-		if(board==child->board)
-		{
-			new_root=child;
-		}
-		else
-			deleteNodes(child);
-	}
-	delete root;
-	if(new_root!=NULL)
-		root=new_root;
-	else
-		root= new Node(board, turn, swap_happened);
-}
-
-void get_t(const int&n)
-{
-	for(int i=0;i<n;i++)
-		cout<<"\t";
-}
-
-void write_children(Node*node)
-{
-	cout<<"visits\twins\tchildren.size\tuntriedMoves.size\tlastMove\n";
-	cout<<"current node:\n"<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\nits children\n";
-	for(Node*child:node->children)
-	{
-		cout<<child->visits<<"\t"<<child->wins<<"\t"<<child->children.size()<<"\t\t"<<child->untriedMoves.size()<<"\t\t\t"<<child->last_move.first<<" "<<child->last_move.second<<endl;
-	}
-}
-void write_m_children(Node*node, int max_depth, int depth=0)
-{
-	get_t(depth);
-	cout<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\t\t\t"<<node->swapped<<"\t"<<node->last_move.first<<" "<<node->last_move.second<<endl;
-	if(depth<max_depth)
-	{
-		get_t(depth+1);
-		if(!node->children.empty())
-			cout<<"its children:\n";
-		for(Node*child:node->children)
-		{
-			write_m_children(child,max_depth, depth+1);
-		}
-		cout<<endl;
-		//cout<<child->visits<<"\t"<<child->wins<<"\t"<<child->children.size()<<"\t\t"<<child->untriedMoves.size()<<"\t\t\t"<<child->last_move.first<<" "<<child->last_move.second<<endl;
-	}
-}
-
-/*void backpropagate(Node*current, int result)
-{
-	do{
-		current->visits+=1;
-		if(current->turn%2==1)
-			current->wins += result;
-		else
-			current->wins += (1-result);
-		
-		current=current->parent;
-	} while(current!=NULL);
-}*/
-
-void newBackpropagate(Node*current, int result, int visits)
-{
-	do{
-		current->visits+=visits;
-		if(current->turn%2==1)
-			current->wins += result;
-		else
-			current->wins += (visits-result);
-		
-		current=current->parent;
-	} while(current!=NULL);
-}
-
-void newSimulation(Node*node, int&result, int&visits)
-{
-	//if the node reached an endstate
-	int winner = pos::check_for_winner(node->board);
-	if(winner != 0)
-	{
-		result = (winner==1)? 10: 0;
-		visits = 10;
-		return;
-	}
-	//if wasn't visited before
-	if(node->visits==0)
-	{
-		result=0;
-		visits=5;
-		vector<future<int>>thread_results;
-		for(int i=0;i<5;i++)
-		{
-			thread_results.push_back(async(launch::async, simulation, node->board, node->turn, node->swapped));
-		}
-		for (auto& f : thread_results)
-		{
-			result += f.get(); // Wait and retrieve each result
-		}
-		return;
-	}
-	// else normal simulation
-	result=simulation(node->board, node->turn, node->swapped);
-	visits=1;
-}
-
-void selection(Node *& node)
-{
-	int k=0;
-	//cout<<"in selection children nr:"<<node->children.size()<<endl;
-	while (!node->isLeaf() and node->untriedMoves.empty())
-	{
-		node = node->selectBestUCT();
-		k++;
-	}
-	//cout<<"selection depth: "<<k<<"\n";
-}
-
-void expension(Node*&node)
-{
-	if(!node->untriedMoves.empty() and pos::check_for_winner(node->board)==0)
-	{
-		//cout<<"created a new child\n";
-		int i, j;
-		tie(i, j)=node->untriedMoves.back();
-		node->untriedMoves.pop_back();
-		//cout<<"moves: "<<i<<" "<<j<<endl;
-
-		vector<vector<int>>new_board = node->board;
-		bool swapped=(new_board[i][j]!=0)?true :false;
-		new_board[i][j]=(turn%2==0)? 1 : -1;
-
-		int new_turn=node->turn+1;
-
-		Node * new_node = new Node(new_board, new_turn, swapped or node->swapped, node);
-		new_node->last_move={i,j};
-		node->children.push_back(new_node);
-		node=new_node;
-	}
-	else
-	{}
-		//cout<<"NO EXPENSION -> UNTRIED MOVES EMPTY\n";
-}
-
-void deleteNodes(Node*&node)
-{
-	if(node==NULL)
-	{
-		//cout<<"NULL!!!!\n";
-		return;
-	}
-	if(node->isLeaf())
-	{
-		//cout<<"entered isLeaf()\n";
-		delete node;
-		return;
-	}
-	
-	for(int i=0;i<node->children.size();i++)
-	{
-		deleteNodes(node->children[i]);
-	}
-	delete node;
-	node=NULL;
-}
-
-/*Node*findNewRoot()
-{
-	Node*null=NULL;
-	if(root==NULL)
-	{
-		return null;
-	}
-	if(root->board==board)
-	{
-		return root;
-	}
-	if(!root->isLeaf())
-		for(auto&child : root->children)
-		{
-			if(child->board==board)
+			if(child!=selectedNode)
 			{
-				cout<<"FOUND A NEW ROOT\n";
-				return child;
+				deleteNodes(child);
 			}
 		}
-	cout<<"didnt found the new root!!!!!!!!!!!\n";
-	return null;
-}*/
+		delete root;
+		root=selectedNode;*/
+	}
 
+	void manageRoot()
+	{
+		if(root==NULL)
+		{
+			cout<<"\t\tcreated a new root\n";
+			root= new Node(board, turn, swap_happened);
+			return;
+		}
+		if(root->board==board)
+			return;
+		cout<<"replacing the root\n";
+		Node*new_root=NULL;
+		for(Node*&child : root->children)
+		{
+			if(board==child->board)
+			{
+				cout<<"selected 1\n";
+				new_root=child;
+			}
+			else
+			{
+				cout<<"deleted 1\n";
+				deleteNodes(child);
+			}
+		}
+		delete root;
+		if(new_root==NULL)
+		{
+			cout<<"creatinGGGGGGGGGGG\n";
+			root= new Node(board, turn, swap_happened);
+		}
+		else
+		{
+			cout<<"replacing\n";
+			root=new_root;
+		}
+		root->parent=NULL;
+	}
+
+	void get_t(const int&n)
+	{
+		for(int i=0;i<n;i++)
+			cout<<"\t";
+	}
+
+	void write_children(Node*node)
+	{
+		cout<<"visits\twins\tchildren.size\tuntriedMoves.size\tlastMove\n";
+		cout<<"current node:\n"<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\nits children\n";
+		for(Node*child:node->children)
+		{
+			cout<<child->visits<<"\t"<<child->wins<<"\t"<<child->children.size()<<"\t\t"<<child->untriedMoves.size()<<"\t\t\t"<<child->last_move.first<<" "<<child->last_move.second<<endl;
+		}
+	}
+
+	void write_m_children(Node*node, int max_depth, int depth=0)
+	{
+		get_t(depth);
+		cout<<node->visits<<"\t"<<node->wins<<"\t"<<node->children.size()<<"\t\t"<<node->untriedMoves.size()<<"\t\t\t"<<node->swapped<<"\t"<<node->last_move.first<<" "<<node->last_move.second<<endl;
+		if(depth<max_depth)
+		{
+			get_t(depth+1);
+			if(!node->children.empty())
+				cout<<"its children:\n";
+			for(Node*child:node->children)
+			{
+				write_m_children(child,max_depth, depth+1);
+			}
+			cout<<endl;
+			//cout<<child->visits<<"\t"<<child->wins<<"\t"<<child->children.size()<<"\t\t"<<child->untriedMoves.size()<<"\t\t\t"<<child->last_move.first<<" "<<child->last_move.second<<endl;
+		}
+	}
+
+	/*void backpropagate(Node*current, int result)
+	{
+		do{
+			current->visits+=1;
+			if(current->turn%2==1)
+				current->wins += result;
+			else
+				current->wins += (1-result);
+			
+			current=current->parent;
+		} while(current!=NULL);
+	}*/
+
+	void backpropagate(Node*current, int result, int visits)
+	{
+		do{
+			current->visits+=visits;
+			if(current->turn%2==1)
+				current->wins += result;
+			else
+				current->wins += (visits-result);
+			
+			current=current->parent;
+		} while(current!=NULL);
+	}
+
+	void runSimulation(Node*node, int&result, int&visits)
+	{
+		//if the node reached an endstate
+		int winner = pos::checkForWinner(node->board);
+		if(winner != 0)
+		{
+			result = (winner==1)? 10: 0;
+			visits = 10;
+			return;
+		}
+		//if wasn't visited before
+		if(node->visits==0)
+		{
+			result=0;
+			visits=5;
+			vector<future<int>>thread_results;
+			for(int i=0;i<5;i++)
+			{
+				thread_results.push_back(async(launch::async, simulation, node->board, node->turn, node->swapped));
+			}
+			for (auto& f : thread_results)
+			{
+				result += f.get(); // Wait and retrieve each result
+			}
+			return;
+		}
+		// else normal simulation
+		result=simulation(node->board, node->turn, node->swapped);
+		visits=1;
+	}
+
+	void selection(Node *& node)
+	{
+		int k=0;
+		//cout<<"in selection children nr:"<<node->children.size()<<endl;
+		while (!node->isLeaf() and node->untriedMoves.empty())
+		{
+			node = node->selectBestUCT();
+			k++;
+		}
+		//cout<<"selection depth: "<<k<<"\n";
+	}
+
+	void expension(Node*&node)
+	{
+		if(!node->untriedMoves.empty() and pos::checkForWinner(node->board)==0)
+		{
+			//cout<<"created a new child\n";
+			int i, j;
+			tie(i, j)=node->untriedMoves.back();
+			node->untriedMoves.pop_back();
+			//cout<<"moves: "<<i<<" "<<j<<endl;
+
+			vector<vector<int>>new_board = node->board;
+			bool swapped=(new_board[i][j]!=0)?true :false;
+			new_board[i][j]=(turn%2==0)? 1 : -1;
+
+			int new_turn=node->turn+1;
+
+			Node * new_node = new Node(new_board, new_turn, swapped or node->swapped, node);
+			new_node->last_move={i,j};
+			node->children.push_back(new_node);
+			node=new_node;
+		}
+		else
+		{}
+			//cout<<"NO EXPENSION -> UNTRIED MOVES EMPTY\n";
+	}
+
+	void deleteNodes(Node*&node)
+	{
+		if(node==NULL)
+		{
+			//cout<<"NULL!!!!\n";
+			return;
+		}
+		if(node->isLeaf())
+		{
+			//cout<<"entered isLeaf()\n";
+			delete node;
+			return;
+		}
+		
+		for(int i=0;i<node->children.size();i++)
+		{
+			deleteNodes(node->children[i]);
+		}
+		delete node;
+		node=NULL;
+	}
+
+	/*Node*findNewRoot()
+	{
+		Node*null=NULL;
+		if(root==NULL)
+		{
+			return null;
+		}
+		if(root->board==board)
+		{
+			return root;
+		}
+		if(!root->isLeaf())
+			for(auto&child : root->children)
+			{
+				if(child->board==board)
+				{
+					cout<<"FOUND A NEW ROOT\n";
+					return child;
+				}
+			}
+		cout<<"didnt found the new root!!!!!!!!!!!\n";
+		return null;
+	}*/
+
+}
 
 namespace ai
 {
+	bool stop_ai=false;
 	pair<int, int> move={1, 1};
 	state_var state=READY;
 	thread t;
-
+	int getIterationLimit()
+	{
+		if(ai_selection[turn%2]==2)
+		{
+			switch(int(n))
+			{
+				case 3: return n*n;
+				case 4: return n*n*n*n;
+				case 5: return n*n*n*n;
+				case 6:
+				case 7: return 3*n*n*n;
+				case 8: return 3*n*n*n;
+				case 9: return n*n*n*n;
+			}
+		}
+		else
+		{
+			switch(int(n))
+			{
+				case 3: return n*n*n*n;
+				case 4: return n*n*n*n*2;
+				case 5: return n*n*n*n*2;
+				case 6:
+				case 7: return n*n*n*n;
+				case 8:
+				case 9: return n*n*n*n*3;
+			}
+		}
+		return n*n*n*n;
+	}
+	void stopAI()
+	{
+		if(state==WORKING)
+			stop_ai=true;
+	}
 	void iterationThread(vector<vector<int>>board, pair<int,int>&move, int turn)
 	{
-		manageRoot();
-		/*cout<<"root="<<root<<endl;
-		root=findNewRoot();
-		deleteNodes(root);
-		root = new Node(board, turn);
-		cout<<"root swapped:"<<root->swapped<<endl;*/
-		int time_limit=1000;
+		mcts::manageRoot();
+		//deleteNodes(root);
+		//root = new Node(board, turn);
+		//cout<<"root swapped:"<<root->swapped<<endl;
+		//cout<<"root's board:\n";
+		int time_limit;
+		time_limit=30000;
 
 		auto start = std::chrono::high_resolution_clock::now();
-		int iteration_limit=2000;
+		int iteration_limit=getIterationLimit();
+		//iteration_limit=10000;
 		for(int i=0;i<iteration_limit;i++)
 		{
-			Node * node = root;
+			mcts::Node * node = mcts::root;
 
 			//cout<<"\niteration cycle "<<i<<"\n\n";
 			//selection
-			selection(node);
+			mcts::selection(node);
+			//cout<<"selelction\t";
 			//if(node==root)cout<<"ROOT was selected\n";
 			//expension
-			expension(node);
+			mcts::expension(node);
+			//cout<<"expension\t";
 			//if(node==root)cout<<"same as ROOT after expension\n";
 			//cout<<"expanded node visits:"<<node->visits<<endl;
 
@@ -1094,22 +1058,30 @@ namespace ai
 			/*int result=simulation(node->board, node->turn);
 			cout<<"simulation result="<<result<<endl;*/
 
+			//cout<<"simulation\t";
 			int result, visits;
-			newSimulation(node, result, visits);
+			mcts::runSimulation(node, result, visits);
 
 			//backpropagation
 			//backpropagate(node, result);
-			newBackpropagate(node, result, visits);
+			//cout<<"backpropagate\t";
+			mcts::backpropagate(node, result, visits);
+
+			if(stop_ai)
+			{
+				break;
+			}
 
 			auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::high_resolution_clock::now() - start).count();
 			if(elapsed>=time_limit)
 				break;
 		}
 		//move=root->bestMove();
-		selectBestMove(move);
+		mcts::selectBestMove(move);
 		//root=findNewRoot();
 		cout<<"\tvisits\twins\tchildren.size\tuntriedMoves.size\tswap\tlastMove\n";
-		write_m_children(root, 2);
+		mcts::write_m_children(mcts::root, 2);
+		cout<<"move="<<move.first<<" "<<move.second<<endl;
 		//deleteNodes(root);
 
 		state=DONE;
@@ -1117,22 +1089,47 @@ namespace ai
 	
 	void run()
 	{
+	
+		//check for ai turn
+		if(game_stage==game and ai_selection[turn%2]!=0 and pos::checkForWinner(board)==0)
+		{
+			//cout<<"entered ai:run();\nturn="<<turn<<endl;;
 			if(state==READY)
 			{
-				cout<<"starttttt"<<endl;
-				//t=thread(ai_pair, board, ref(move), ai_selection[turn%2], turn);
-				t=thread(iterationThread, board, ref(move), turn);
-				state=WORKING;
+				if(ai_selection[turn%2]==1)
+				{
+					//to do
+					cout<<"started random move generating\n";
+					move=pos::getRandomMove(board, turn);
+					state=DONE;
+				}
+
+				else
+				{
+					cout<<"starttttt"<<endl;
+					state=WORKING;
+					//t=thread(ai_pair, board, ref(move), ai_selection[turn%2], turn);
+					t=thread(iterationThread, board, ref(move), turn);
+				}
 			}
 			if(state==DONE)
 			{
-				t.join();
+				if(t.joinable())
+					t.join();
 				cout<<"in done if move:"<<move.first<<"  "<<move.second<<"\n";
-				make_move(move.first, move.second);
+				if(stop_ai)
+				{
+					stop_ai=false;
+				}
+				else
+				{
+					makeMove(move.first, move.second);
+				}
 				cout<<"enddddddd"<<endl;
 				state=READY;
-				refresh_text_turn();
+				refreshTextTurn();
 			}
+		}
 	}
 }
 
@@ -1142,29 +1139,6 @@ int main(int argc, char const *argv[])
 	//Font font;
 	font.loadFromFile("typo.otf");
 	//shapes
-	for(int i=0;i<2;i++)
-	{
-		for(int j=0;j<4;j++)
-		{
-			if(j==0)
-				ai_button[i][j].setString("human", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-			else if(j==1)
-				ai_button[i][j].setString("easy", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-			else if(j==2)
-				ai_button[i][j].setString("medium", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-			else if(j==3)
-				ai_button[i][j].setString("hard", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-		}
-	}
-
-	Bswap.setString("Swap", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-
-	con.setString("Continue", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-
-	Bstart.setString("Start Game", Color(0, 0, 0, 255), Color(255, 255, 255, 255));
-
-	Bexit.setString("Exit", Color::Black, Color::White);
-
 	triangle.setColor(Color(0, 0, 0, 255), Color(255, 255, 255, 255));
 
 	border_unit.setFillColor(Color(255, 255,255,255));
@@ -1184,6 +1158,7 @@ int main(int argc, char const *argv[])
 		{
 			if(event.type == Event::Closed)
 			{
+				mcts::deleteNodes(mcts::root);
 				window.close();
 			}
 			if(event.type == Event::Resized)
@@ -1194,11 +1169,7 @@ int main(int argc, char const *argv[])
 			}
 		}
 	//update
-		//check for ai turn
-		if(game_stage==game and ai_selection[turn%2]!=0 and pos::check_for_winner(board)==0)
-		{
 			ai::run();
-		}
 
         if(Mouse::isButtonPressed(Mouse::Left) and click==0)
 		{
@@ -1211,17 +1182,15 @@ int main(int argc, char const *argv[])
 					board.assign(board.size(), vector<int>(board.size(), 0));
 					turn=0;
 					swap_happened=false;
-					refresh_ai_move_checklist();
-					ir();
-					refresh_text_turn();
+					refreshTextTurn();
 					resize();
 				}
-				if(triangle.isMouseInside()==1 and n<17)
+				if(triangle.isMouseInside()==1 and n<9)
 				{
 					n++;
 					T_TableSize.setString("Table size:"+to_string(int(n)));
 				}
-				else if(triangle.isMouseInside()==-1 and n>9 )
+				else if(triangle.isMouseInside()==-1 and n>3 )
 				{
 					n--;
 					T_TableSize.setString("Table size:"+to_string(int(n)));
@@ -1239,21 +1208,22 @@ int main(int argc, char const *argv[])
 				cout<<ai_selection[1]<<endl;
 				cout<<endl;
 			}
-			else
+			else //game_stage==game
 			{
 				//cout<<Mouse::getPosition(window).x<<" "<<Mouse::getPosition(window).y<<endl;
-				if(pos::check_for_winner(board)!=0 and con.isMouseInside())
+				if(pos::checkForWinner(board)!=0 and con.isMouseInside())
 					game_stage=start_menu;
 				if(turn==1 and Bswap.isMouseInside())
 				{
-					swap_act(board);
+					swapAct(board);
 					turn++;
 				}
 				if(Bexit.isMouseInside())
 				{
 					game_stage=start_menu;
+					ai::stopAI();
 				}
-				if(pos::check_for_winner(board)==0 and ai::state!=WORKING)
+				if(pos::checkForWinner(board)==0 and ai::state==READY)
 				{
 					float x=(int(n)%2==0)?Mouse::getPosition(window).x : Mouse::getPosition(window).x-hex_rad*sqrt(3)/2, y=Mouse::getPosition(window).y;
 					int  b=x/(hex_rad*sqrt(3)/2), c=(x/sqrt(3)+y+hex_rad/2)/hex_rad;
@@ -1263,14 +1233,14 @@ int main(int argc, char const *argv[])
 						int i=(c-a-1)/3, j=(b+i)/2;
 						j=(int(n)%2==0)? j-n/2 : j-(n-1)/2;
 						if(i>=0 and j<n and i<n and j>=0)
-							make_move( i, j);
+							makeMove( i, j);
 					}
+					refreshTextTurn();
 				}
-				refresh_text_turn();
 				//cout<<" blue "<<pos::bfs(board, 1)<<endl;
 				//cout<<" red "<<pos::bfs(board, -1)<<endl;
 				//cout<<" pos ev "<<pos::position_evaluation(board)<<endl;
-				cout<<"simulation="<<simulation(board, turn, swap_happened)<<endl<<"swap happened:"<<swap_happened<<endl;
+				cout<<"simulation="<<mcts::simulation(board, turn, swap_happened)<<endl<<"swap happened:"<<swap_happened<<endl<<"turn="<<turn<<endl;
 				//cout<<"pos moves:";
 				//write_pos_moves(board, turn);
 			}
@@ -1318,7 +1288,7 @@ int main(int argc, char const *argv[])
 			window.draw(T_Turn.text);
 			window.draw(T_WhosTurn.text);
 
-			if(pos::check_for_winner(board)!=0)
+			if(pos::checkForWinner(board)!=0)
 			{
 				window.draw(con.hex);
 				window.draw(con.text);
@@ -1331,14 +1301,9 @@ int main(int argc, char const *argv[])
 		}
 		window.display();
 	}
+	deleteNodes(mcts::root);
 	return 0;
 }
-
-
-
-
-
-
 
 
 void resize()
@@ -1364,7 +1329,7 @@ void resize()
 
 	Bswap.resize(x-25*unit, y-10*unit, unit*6);
 	Bexit.resize(x-25*unit, y-30*unit, unit*6, 1);
-	refresh_text_turn();
+	refreshTextTurn();
 	T_TableSize.resize(24*unit, y*5/6, 8*unit, "Table size:"+to_string(int(n)));
 	triangle.resize(55*unit, y*5/6, 10*unit);
 
@@ -1384,34 +1349,34 @@ void resize()
 	}
 }
 
-void refresh_text_turn()
+void refreshTextTurn()
 {
 	T_Turn.resize(20*unit, 25*unit, 8*unit, "Turn nr: "+to_string(turn/2+1));
 
-	if(pos::check_for_winner(board)==1)
+	if(pos::checkForWinner(board)==1)
 	{
 		T_WhosTurn.setString("Blue Won!");
-		T_WhosTurn.text.setFillColor(Color::Blue);
+		T_WhosTurn.text.setFillColor(blue);
 	}
-	else if(pos::check_for_winner(board)==-1)
+	else if(pos::checkForWinner(board)==-1)
 	{
 		T_WhosTurn.setString("Red Won!");
 		T_WhosTurn.text.setFillColor(Color::Red);
 	}
 	else if(turn%2==0)
 	{
-		T_WhosTurn.setString("Blue's turn");
-		T_WhosTurn.text.setFillColor(Color::Blue);
+		T_WhosTurn.setString( (ai_selection[turn%2]<2)?"Blue's turn":"Blue thinking");
+		T_WhosTurn.text.setFillColor(blue);
 	}
 	else
 	{
-		T_WhosTurn.setString("Red's turn");
+		T_WhosTurn.setString( (ai_selection[turn%2]<2)?"Red's turn":"Red thinking");
 		T_WhosTurn.text.setFillColor(Color::Red);
 	}
-	T_WhosTurn.resize(20*unit, 33*unit, 7*unit);
+	T_WhosTurn.resize(20*unit, 33*unit, 6*unit);
 }
 
-void swap_act(vector<vector<int>> &board)
+void swapAct(vector<vector<int>> &board)
 {
 	bool br=0;
 	for(int i=0;i<n;i++)
@@ -1430,90 +1395,9 @@ void swap_act(vector<vector<int>> &board)
 	}
 }
 
-void ir()
-{
-	cout<<endl;
-	for(int i=0;i<ai_move_checklist.size();i++)
-		cout<<ai_move_checklist[i].first<<","<<ai_move_checklist[i].second<<"   ";
-	cout<<endl;
-}
 
-void write_won()
-{
-	cout<<"hey someone won"<<endl;
-}
 
-void ww(float a)
-{
-	cout<<a<<endl;
-}
-
-void vv(string hay)
-{
-	cout<<hay<<endl;
-}
-
-/*int dfs_pos_ev( vector<vector<bool>>& visited,int i, int j, int target, int k,  vector<vector<int>> board)
-{
-	if(i<0 or i>n-1 or j<0 or j>n-1)
-	return -1;
-	if(board[i][j]==-1*target or visited[i][j]==true)
-	return -1;
-	visited[i][j]=true;
-
-	if(board[i][j]==0)
-	k++;
-
-	//check for destination
-	if(target==1 and i==n-1)
-	return k;
-	if(target==-1 and j==n-1)
-	return k;
-
-	//check neighbours
-	vector<int> di={1, 1, 0, 0, -1, -1};
-	vector<int> dj={0, 1, -1, 1, -1, 0};
-
-	if(target==-1)
-	{
-	di={0, 1, -1, 1, -1, 0};
-		dj={1, 1, 0, 0, -1, -1};
-	}
-
-	for(int h=0; h<6;h++)
-	{
-		int s=dfs_pos_ev( visited, i+di.at(h), j+dj.at(h), target, k, board);
-		if( s != -1 )
-		return s;
-	}
-	return -1;
-}*/
-
-/*int start_dfs_pos_ev(int i, int j, int target, vector<vector<int>> board)
-{
-	vector<vector<bool>> visited(n, vector<bool>(n, false));
-	return dfs_pos_ev(visited, i, j, target, 0, board);
-}*/
-
-void write_board(vector<vector<pair<int ,int>>>par_matrix, int i, int j)
-{
-	for(int u=0;u<n;u++)
-	{
-		for(int v=0;v<n;v++)
-		{
-			cout<<"("<< get<0>(par_matrix[u][v]) <<", "<<get<1>(par_matrix[u][v])<<")";
-		}
-		cout<<endl;
-	}
-	cout<<endl;
-	while(i!=-1 and j!=-1)
-	{
-		cout<<"("<< par_matrix[i][j].first <<", "<< par_matrix[i][j].second <<")  ";
-		tie(i, j)=par_matrix[i][j];
-	}
-}
-
-void make_move( int i, int j)
+void makeMove( int i, int j)
 {
 	if(board[i][j]==0 or turn<=1)
 	{
@@ -1526,56 +1410,12 @@ void make_move( int i, int j)
 	//cout<<"K="<<k<<endl;
 	//cout<<position_evaluation(board)<<"-ev"<<endl;
 	//cout<<bfs_for_pos_ev(i, j, 1,  board,0).first;
-	if(pos::check_for_winner(board)==1)
+	/*if(pos::checkForWinner(board)==1)
 		cout<<"blue won";
-	if( pos::check_for_winner(board)==-1)
-		cout<<"red won";
+	if( pos::checkForWinner(board)==-1)
+		cout<<"red won";*/
 }
 
-bool eq(Vector2i m, Vector2f a, Vector2f b)
-{
-//vv("x ");ww(b.x);vv("y ");ww(b.y);
-	if(  (m.y-a.y)<(b.y-a.y)/(b.x-a.x)*(m.x-a.x)  )
-		if(a.x<b.x) return 1;
-		else return 0;
 
-	if(a.x<b.x) return 0;
-	else return 1;
-}
-
-void refresh_ai_move_checklist()
-{
-	vector<vector<bool>> visited(n,vector<bool>(n, false));
-	queue<tuple<int, int, int>>Q;
-	ai_move_checklist.resize(0);
-	int i=n/2, j=n/2, num;
-	int di[6]={1, 0, 0, -1, 1, -1};
-	int dj[6]={0, 1, -1, 0, 1, -1};
-	ai_move_checklist.resize(0);
-	Q.push(make_tuple(i, j, 0));
-	if(int(n)%2==0)
-	{
-		Q.push(make_tuple(i-1, j-1, 0));
-		Q.push(make_tuple(i-1, j, 0));
-		Q.push(make_tuple(i, j-1, 0));
-	}
-	while(!Q.empty())
-	{
-		i=get<0>(Q.front());
-		j=get<1>(Q.front());
-		num=get<2>(Q.front());
-		Q.pop();
-		if(visited[i][j]==1)
-			continue;
-
-		ai_move_checklist.push_back(make_pair(i, j));
-		visited[i][j]=1;
-
-		for(int g=0;g<6;g++)
-			if(i+di[g]<n and j+dj[g]<n and i+di[g]>-1 and j+dj[g]>-1)
-				Q.push(make_tuple(i+di[g], j+dj[g], num+1));
-	}
-	ir();															
-}
 
 // g++ main.cpp -o app -lsfml-graphics -lsfml-window -lsfml-system && ./app
