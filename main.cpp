@@ -773,36 +773,36 @@ namespace mcts
 	{
 		if(root==NULL)
 		{
-			cout<<"\t\tcreated a new root\n";
+			//cout<<"\t\tcreated a new root\n";
 			root= new Node(board, turn, swap_happened);
 			return;
 		}
 		if(root->board==board)
 			return;
-		cout<<"replacing the root\n";
+		//cout<<"replacing the root\n";
 		Node*new_root=NULL;
 		for(Node*&child : root->children)
 		{
 			if(board==child->board)
 			{
-				cout<<"selected 1\n";
+				//cout<<"selected 1\n";
 				new_root=child;
 			}
 			else
 			{
-				cout<<"deleted 1\n";
+				//cout<<"deleted 1\n";
 				deleteNodes(child);
 			}
 		}
 		delete root;
 		if(new_root==NULL)
 		{
-			cout<<"creatinGGGGGGGGGGG\n";
+			//cout<<"creatinGGGGGGGGGGG\n";
 			root= new Node(board, turn, swap_happened);
 		}
 		else
 		{
-			cout<<"replacing\n";
+			//cout<<"replacing\n";
 			root=new_root;
 		}
 		root->parent=NULL;
@@ -1079,9 +1079,9 @@ namespace ai
 		//move=root->bestMove();
 		mcts::selectBestMove(move);
 		//root=findNewRoot();
-		cout<<"\tvisits\twins\tchildren.size\tuntriedMoves.size\tswap\tlastMove\n";
-		mcts::write_m_children(mcts::root, 2);
-		cout<<"move="<<move.first<<" "<<move.second<<endl;
+		//cout<<"\tvisits\twins\tchildren.size\tuntriedMoves.size\tswap\tlastMove\n";
+		//mcts::write_m_children(mcts::root, 2);
+		//cout<<"move="<<move.first<<" "<<move.second<<endl;
 		//deleteNodes(root);
 
 		state=DONE;
@@ -1099,14 +1099,14 @@ namespace ai
 				if(ai_selection[turn%2]==1)
 				{
 					//to do
-					cout<<"started random move generating\n";
+					//cout<<"started random move generating\n";
 					move=pos::getRandomMove(board, turn);
 					state=DONE;
 				}
 
 				else
 				{
-					cout<<"starttttt"<<endl;
+					//cout<<"starttttt"<<endl;
 					state=WORKING;
 					//t=thread(ai_pair, board, ref(move), ai_selection[turn%2], turn);
 					t=thread(iterationThread, board, ref(move), turn);
@@ -1116,7 +1116,7 @@ namespace ai
 			{
 				if(t.joinable())
 					t.join();
-				cout<<"in done if move:"<<move.first<<"  "<<move.second<<"\n";
+				//cout<<"in done if move:"<<move.first<<"  "<<move.second<<"\n";
 				if(stop_ai)
 				{
 					stop_ai=false;
@@ -1125,7 +1125,7 @@ namespace ai
 				{
 					makeMove(move.first, move.second);
 				}
-				cout<<"enddddddd"<<endl;
+				//cout<<"enddddddd"<<endl;
 				state=READY;
 				refreshTextTurn();
 			}
@@ -1204,9 +1204,9 @@ int main(int argc, char const *argv[])
 						}
 
 					}
-				cout<<ai_selection[0]<<endl;
-				cout<<ai_selection[1]<<endl;
-				cout<<endl;
+				//cout<<ai_selection[0]<<endl;
+				//cout<<ai_selection[1]<<endl;
+				//cout<<endl;
 			}
 			else //game_stage==game
 			{
@@ -1240,7 +1240,7 @@ int main(int argc, char const *argv[])
 				//cout<<" blue "<<pos::bfs(board, 1)<<endl;
 				//cout<<" red "<<pos::bfs(board, -1)<<endl;
 				//cout<<" pos ev "<<pos::position_evaluation(board)<<endl;
-				cout<<"simulation="<<mcts::simulation(board, turn, swap_happened)<<endl<<"swap happened:"<<swap_happened<<endl<<"turn="<<turn<<endl;
+				//cout<<"simulation="<<mcts::simulation(board, turn, swap_happened)<<endl<<"swap happened:"<<swap_happened<<endl<<"turn="<<turn<<endl;
 				//cout<<"pos moves:";
 				//write_pos_moves(board, turn);
 			}
